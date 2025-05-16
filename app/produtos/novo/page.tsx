@@ -15,9 +15,7 @@ import { useState } from "react"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { adicionarProduto } from "../data"
 
 // Tipos para as novas funcionalidades
 interface Sabor {
@@ -164,8 +162,25 @@ export default function NovoProdutoPage() {
         }
       }
 
-      // Adicionar o produto usando a função do módulo data
-      const novoProduto = adicionarProduto(produto)
+      // Enviar dados para a API
+      const response = await fetch("/api/produtos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(produto),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+      }
+
+      const responseData = await response.json()
+
+      if (!responseData.success) {
+        throw new Error(responseData.error || "Erro desconhecido ao criar produto")
+      }
 
       toast({
         title: "Produto criado",
@@ -174,11 +189,11 @@ export default function NovoProdutoPage() {
 
       // Redirecionar para a página de produtos
       router.push("/produtos")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao criar produto:", error)
       toast({
         title: "Erro ao criar",
-        description: "Ocorreu um erro ao criar o produto. Tente novamente.",
+        description: error.message || "Ocorreu um erro ao criar o produto. Tente novamente.",
         variant: "destructive",
       })
     } finally {

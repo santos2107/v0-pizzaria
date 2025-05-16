@@ -1,144 +1,153 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Loader2, AlertCircle } from "lucide-react"
-import { useToast } from "@/components/ui/use-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Loader2, AlertCircle } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 interface Mesa {
-  id: number
-  numero: string
-  capacidade: number
-  status: string
+  id: number;
+  numero: string;
+  capacidade: number;
+  status: string;
 }
 
 interface JuntarMesasModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSuccess: () => void
-  mesasDisponiveis: Array<{ id: number; numero: string; capacidade: number }>
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  mesasDisponiveis: Array<{ id: number; numero: string; capacidade: number }>;
 }
 
-export function JuntarMesasModal({ isOpen, onClose, onSuccess, mesasDisponiveis }: JuntarMesasModalProps) {
-  const { toast } = useToast()
-  const [isLoading, setIsLoading] = useState(false)
-  const [mesaPrincipal, setMesaPrincipal] = useState<string>("")
-  const [mesasSecundarias, setMesasSecundarias] = useState<string[]>([])
-  const [novoNumero, setNovoNumero] = useState("")
-  const [capacidadeTotal, setCapacidadeTotal] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+const API_KEY = "api_key_pizzaria_kassio_2024"; // Idealmente, isso viria de variáveis de ambiente
+
+export function JuntarMesasModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  mesasDisponiveis,
+}: JuntarMesasModalProps) {
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
+  const [mesaPrincipalId, setMesaPrincipalId] = useState<string>("");
+  const [mesasSecundariasIds, setMesasSecundariasIds] = useState<string[]>([]);
+  // O novo número da mesa combinada será definido pela API ou pode ser sugerido pelo usuário.
+  // Por simplicidade, vamos assumir que a API pode lidar com a lógica de numeração
+  // ou que o usuário informa um número para a mesa principal que será "expandida".
+  // Para este exemplo, vamos focar em enviar a ação de juntar para a API.
+  const [error, setError] = useState<string | null>(null);
 
   // Filtrar mesas secundárias para não incluir a mesa principal
-  const mesasSecundariasDisponiveis = mesasDisponiveis.filter((mesa) => mesa.id.toString() !== mesaPrincipal)
+  const mesasSecundariasDisponiveis = mesasDisponiveis.filter(
+    (mesa) => mesa.id.toString() !== mesaPrincipalId
+  );
 
-  // Calcular capacidade total quando as mesas são selecionadas
+  const [capacidadeTotalCalculada, setCapacidadeTotalCalculada] = useState(0);
+
   useEffect(() => {
-    if (!mesaPrincipal) {
-      setCapacidadeTotal(0)
-      return
+    if (!mesaPrincipalId) {
+      setCapacidadeTotalCalculada(0);
+      return;
     }
+    const principal = mesasDisponiveis.find(m => m.id.toString() === mesaPrincipalId);
+    let total = principal?.capacidade || 0;
+    mesasSecundariasIds.forEach(id => {
+      const sec = mesasDisponiveis.find(m => m.id.toString() === id);
+      if (sec) total += sec.capacidade;
+    });
+    setCapacidadeTotalCalculada(total);
+  }, [mesaPrincipalId, mesasSecundariasIds, mesasDisponiveis]);
 
-    // Encontrar a mesa principal nos dados disponíveis
-    const mesaPrincipalObj = mesasDisponiveis.find((m) => m.id.toString() === mesaPrincipal)
-    let total = mesaPrincipalObj?.capacidade || 0
-
-    // Somar capacidades das mesas secundárias
-    mesasSecundarias.forEach((mesaId) => {
-      const mesaObj = mesasDisponiveis.find((m) => m.id.toString() === mesaId)
-      if (mesaObj) {
-        total += mesaObj.capacidade
-      }
-    })
-
-    setCapacidadeTotal(total)
-  }, [mesaPrincipal, mesasSecundarias, mesasDisponiveis])
 
   const handleJuntarMesas = async () => {
-    if (!mesaPrincipal || mesasSecundarias.length === 0 || !novoNumero) {
-      setError("Preencha todos os campos obrigatórios")
-      return
+    if (!mesaPrincipalId || mesasSecundariasIds.length === 0) {
+      setError("Selecione a mesa principal e pelo menos uma mesa secundária.");
+      return;
     }
 
-    setIsLoading(true)
-    setError(null)
+    setIsLoading(true);
+    setError(null);
 
     try {
-      // 1. Criar uma nova mesa com a capacidade combinada
-      const responseNovaMesa = await fetch("/api/mesas", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          api_key: "api_key_pizzaria_kassio_2024", // Usar o nome correto do cabeçalho e um valor fixo
-        },
-        body: JSON.stringify({
-          numero: novoNumero,
-          capacidade: capacidadeTotal,
-          status: "Disponível",
-          observacoes: `Mesa combinada: Principal #${mesaPrincipal}, Secundárias: ${mesasSecundarias.join(", ")}`,
-          mesasCombinadas: [mesaPrincipal, ...mesasSecundarias],
-        }),
-      })
-
-      if (!responseNovaMesa.ok) {
-        const errorData = await responseNovaMesa.json()
-        throw new Error(errorData.error || "Erro ao criar mesa combinada")
+      const idsMesasParaJuntar = [
+        parseInt(mesaPrincipalId),
+        ...mesasSecundariasIds.map(id => parseInt(id)),
+      ];
+      
+      const mesaPrincipalObj = mesasDisponiveis.find(m => m.id.toString() === mesaPrincipalId);
+      if (!mesaPrincipalObj) {
+        throw new Error("Mesa principal não encontrada para obter o número.");
       }
 
-      // 2. Atualizar status das mesas originais para "Em uso combinado"
-      const todasMesas = [mesaPrincipal, ...mesasSecundarias]
+      const response = await fetch(`/api/mesas/${mesaPrincipalId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          api_key: API_KEY,
+        },
+        body: JSON.stringify({
+          action: "juntar",
+          mesasParaJuntar: idsMesasParaJuntar, // Envia todos os IDs, incluindo o principal
+          mesaPrincipalNumero: mesaPrincipalObj.numero, // Envia o número da mesa principal para referência no backend
+          // O backend pode decidir o novo número ou usar o da principal e atualizar sua capacidade e observações
+        }),
+      });
 
-      for (const mesaId of todasMesas) {
-        const response = await fetch(`/api/mesas/${mesaId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            api_key: "api_key_pizzaria_kassio_2024", // Usar o nome correto do cabeçalho e um valor fixo
-          },
-          body: JSON.stringify({
-            status: "Em uso combinado",
-            mesaCombinada: novoNumero,
-          }),
-        })
-
-        if (!response.ok) {
-          console.error(`Erro ao atualizar mesa ${mesaId}:`, await response.text())
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error || "Erro ao enviar solicitação para juntar mesas"
+        );
       }
 
       toast({
         title: "Mesas combinadas",
-        description: `As mesas foram combinadas com sucesso em uma nova mesa #${novoNumero}`,
-      })
-
-      onSuccess()
+        description: `As mesas foram combinadas com sucesso.`,
+      });
+      onSuccess(); // Chama a função de sucesso para fechar o modal e atualizar a lista de mesas
     } catch (error) {
-      console.error("Erro ao juntar mesas:", error)
-      setError(error instanceof Error ? error.message : "Não foi possível juntar as mesas")
+      console.error("Erro ao juntar mesas:", error);
+      setError(
+        error instanceof Error ? error.message : "Não foi possível juntar as mesas"
+      );
       toast({
         title: "Erro",
         description: "Não foi possível juntar as mesas",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleToggleMesaSecundaria = (mesaId: string) => {
-    setMesasSecundarias((prev) => (prev.includes(mesaId) ? prev.filter((id) => id !== mesaId) : [...prev, mesaId]))
-  }
+    setMesasSecundariasIds((prev) =>
+      prev.includes(mesaId) ? prev.filter((id) => id !== mesaId) : [...prev, mesaId]
+    );
+  };
 
-  // Obter o número da mesa a partir do ID
   const getMesaNumero = (id: string) => {
-    const mesa = mesasDisponiveis.find((m) => m.id.toString() === id)
-    return mesa ? mesa.numero : id
-  }
+    const mesa = mesasDisponiveis.find((m) => m.id.toString() === id);
+    return mesa ? mesa.numero : id;
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -157,11 +166,10 @@ export function JuntarMesasModal({ isOpen, onClose, onSuccess, mesasDisponiveis 
           <div className="space-y-2">
             <Label htmlFor="mesaPrincipal">Mesa Principal</Label>
             <Select
-              value={mesaPrincipal}
+              value={mesaPrincipalId}
               onValueChange={(value) => {
-                setMesaPrincipal(value)
-                // Remover esta mesa das secundárias se estiver lá
-                setMesasSecundarias((prev) => prev.filter((id) => id !== value))
+                setMesaPrincipalId(value);
+                setMesasSecundariasIds((prev) => prev.filter((id) => id !== value));
               }}
             >
               <SelectTrigger>
@@ -178,19 +186,25 @@ export function JuntarMesasModal({ isOpen, onClose, onSuccess, mesasDisponiveis 
           </div>
 
           <div className="space-y-2">
-            <Label>Mesas Secundárias</Label>
+            <Label>Mesas Secundárias (para juntar à principal)</Label>
             {mesasSecundariasDisponiveis.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhuma mesa disponível para seleção</p>
+              <p className="text-sm text-muted-foreground">
+                Nenhuma outra mesa disponível para seleção ou selecione uma mesa principal primeiro.
+              </p>
             ) : (
               <div className="grid grid-cols-3 gap-2 mt-2">
                 {mesasSecundariasDisponiveis.map((mesa) => (
                   <Button
                     key={mesa.id}
                     type="button"
-                    variant={mesasSecundarias.includes(mesa.id.toString()) ? "default" : "outline"}
+                    variant={
+                      mesasSecundariasIds.includes(mesa.id.toString())
+                        ? "default"
+                        : "outline"
+                    }
                     className="h-10"
                     onClick={() => handleToggleMesaSecundaria(mesa.id.toString())}
-                    disabled={!mesaPrincipal}
+                    disabled={!mesaPrincipalId}
                   >
                     Mesa {mesa.numero}
                   </Button>
@@ -199,14 +213,16 @@ export function JuntarMesasModal({ isOpen, onClose, onSuccess, mesasDisponiveis 
             )}
           </div>
 
-          {mesasSecundarias.length > 0 && (
+          {(mesaPrincipalId || mesasSecundariasIds.length > 0) && (
             <div className="bg-muted p-3 rounded-md">
-              <p className="text-sm font-medium mb-2">Mesas selecionadas:</p>
+              <p className="text-sm font-medium mb-2">Mesas selecionadas para combinação:</p>
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="bg-primary/10">
-                  Mesa {getMesaNumero(mesaPrincipal)} (Principal)
-                </Badge>
-                {mesasSecundarias.map((id) => (
+                {mesaPrincipalId && (
+                    <Badge variant="outline" className="bg-primary/10">
+                    Mesa {getMesaNumero(mesaPrincipalId)} (Principal)
+                    </Badge>
+                )}
+                {mesasSecundariasIds.map((id) => (
                   <Badge key={id} variant="outline">
                     Mesa {getMesaNumero(id)}
                   </Badge>
@@ -214,38 +230,31 @@ export function JuntarMesasModal({ isOpen, onClose, onSuccess, mesasDisponiveis 
               </div>
             </div>
           )}
-
+          
           <div className="space-y-2">
-            <Label htmlFor="novoNumero">Novo Número da Mesa</Label>
-            <Input
-              id="novoNumero"
-              value={novoNumero}
-              onChange={(e) => setNovoNumero(e.target.value)}
-              placeholder="Ex: 10A"
-            />
+            <Label>Capacidade Total Estimada</Label>
+            <div className="p-3 bg-muted rounded-md font-medium text-center">
+              {capacidadeTotalCalculada} pessoas
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Capacidade Total</Label>
-            <div className="p-3 bg-muted rounded-md font-medium text-center">{capacidadeTotal} pessoas</div>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={handleJuntarMesas} disabled={isLoading}>
+          <Button onClick={handleJuntarMesas} disabled={isLoading || !mesaPrincipalId || mesasSecundariasIds.length === 0}>
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Processando...
               </>
             ) : (
-              "Juntar Mesas"
+              "Confirmar Junção"
             )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

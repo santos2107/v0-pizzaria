@@ -85,27 +85,73 @@ export default function ProdutosPage() {
   ]
 
   // Função para excluir produto
-  const excluirProduto = (id: number) => {
-    const novosProdutos = produtos.filter((produto) => produto.id !== id)
-    setProdutos(novosProdutos)
+  const excluirProduto = async (id: number) => {
+    try {
+      const response = await fetch(`/api/produtos/${id}`, {
+        method: "DELETE",
+      })
 
-    toast({
-      title: "Produto excluído",
-      description: "O produto foi excluído com sucesso.",
-      variant: "default",
-    })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+      }
+
+      const responseData = await response.json()
+      if (!responseData.success) {
+        throw new Error(responseData.error || "Erro desconhecido ao excluir produto")
+      }
+
+      setProdutos((prevProdutos) => prevProdutos.filter((produto) => produto.id !== id))
+      toast({
+        title: "Produto excluído",
+        description: "O produto foi excluído com sucesso.",
+      })
+    } catch (error: any) {
+      console.error("Erro ao excluir produto:", error)
+      toast({
+        title: "Erro ao excluir",
+        description: error.message || "Não foi possível excluir o produto.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Função para atualizar disponibilidade
-  const atualizarDisponibilidade = (id: number, disponivel: boolean) => {
-    const novosProdutos = produtos.map((produto) => (produto.id === id ? { ...produto, disponivel } : produto))
-    setProdutos(novosProdutos)
+  const atualizarDisponibilidade = async (id: number, disponivel: boolean) => {
+    try {
+      const response = await fetch(`/api/produtos/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ disponivel }), // Enviar apenas o campo 'disponivel' para atualização parcial
+      })
 
-    toast({
-      title: disponivel ? "Produto ativado" : "Produto desativado",
-      description: `O status do produto foi atualizado com sucesso.`,
-      variant: "default",
-    })
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+      }
+
+      const responseData = await response.json()
+      if (!responseData.success) {
+        throw new Error(responseData.error || "Erro desconhecido ao atualizar disponibilidade")
+      }
+
+      setProdutos((prevProdutos) =>
+        prevProdutos.map((produto) => (produto.id === id ? { ...produto, disponivel } : produto)),
+      )
+      toast({
+        title: disponivel ? "Produto ativado" : "Produto desativado",
+        description: `O status do produto foi atualizado com sucesso.`,
+      })
+    } catch (error: any) {
+      console.error("Erro ao atualizar disponibilidade:", error)
+      toast({
+        title: "Erro ao atualizar status",
+        description: error.message || "Não foi possível atualizar o status do produto.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Atualizar a lógica de filtragem para incluir subcategoria

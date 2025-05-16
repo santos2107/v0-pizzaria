@@ -20,10 +20,10 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Check, Minus, Plus, Search, Trash2, AlertCircle, X } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { produtosData } from "@/app/produtos/data"
-import { clientesData } from "@/app/pedidos/data/clientes"
-import { mesasData } from "@/app/pedidos/data/mesas"
-import { adicionarPedido } from "@/app/pedidos/actions"
+import { produtosData } from "@/app/produtos/data";
+import { clientesData } from "@/app/pedidos/data/clientes";
+// import { mesasData } from "@/app/pedidos/data/mesas"; // Remover importação de mock
+import { adicionarPedido } from "@/app/pedidos/actions";
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
@@ -109,32 +109,41 @@ export default function NovoPedidoPage() {
   // Categorias disponíveis
   const categorias = ["Todas", "Pizzas", "Hambúrgueres", "Bebidas", "Acompanhamentos", "Saladas"]
 
-  // Função para carregar todas as mesas
-  const carregarTodasMesas = () => {
+  // Função para carregar todas as mesas via API
+  const carregarTodasMesas = async () => {
+    setCarregandoMesas(true);
     try {
-      setCarregandoMesas(true)
-      // Obter todas as mesas
-      const mesas = mesasData
-      console.log("Todas as mesas:", mesas)
-      setTodasMesas(mesas)
+      const response = await fetch("/api/mesas", {
+        headers: {
+          // Adicionar api_key se o endpoint GET /api/mesas exigir autenticação
+          // "api_key": "api_key_pizzaria_kassio_2024", 
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ao buscar mesas: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setTodasMesas(data.data || []); // Assumindo que a API retorna { success, count, data }
     } catch (error) {
-      console.error("Erro ao carregar mesas:", error)
+      console.error("Erro ao carregar mesas:", error);
       toast({
         title: "Erro ao carregar mesas",
-        description: "Não foi possível carregar as mesas.",
+        description: error instanceof Error ? error.message : "Não foi possível carregar as mesas.",
         variant: "destructive",
-      })
+      });
+      setTodasMesas([]); // Limpar mesas em caso de erro
     } finally {
-      setCarregandoMesas(false)
+      setCarregandoMesas(false);
     }
-  }
+  };
 
   // Carregar todas as mesas quando o tipo de atendimento for "mesa"
   useEffect(() => {
     if (tipoAtendimento === "mesa") {
-      carregarTodasMesas()
+      carregarTodasMesas();
     }
-  }, [tipoAtendimento])
+  }, [tipoAtendimento]);
 
   // Calcular total do pedido
   const total = itensPedido.reduce((acc, item) => {
@@ -429,14 +438,41 @@ export default function NovoPedidoPage() {
     }
   }
 
-  // Função para atualizar o status da mesa nos dados mock
-  const atualizarStatusMesa = (mesaId: number, novoStatus: string) => {
-    const mesaIndex = mesasData.findIndex((mesa) => mesa.id === mesaId)
-    if (mesaIndex !== -1) {
-      mesasData[mesaIndex] = { ...mesasData[mesaIndex], status: novoStatus }
-      setTodasMesas([...mesasData]) // Atualizar o estado local
+  // Função para atualizar o status da mesa via API
+  const atualizarStatusMesaAPI = async (mesaId: number, novoStatus: string) => {
+    try {
+      const response = await fetch(`/api/mesas/${mesaId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          // Adicionar api_key se o endpoint PUT /api/mesas/[id] exigir autenticação
+          "api_key": "api_key_pizzaria_kassio_2024", 
+        },
+        body: JSON.stringify({ status: novoStatus }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ao atualizar status da mesa: ${response.statusText}`);
+      }
+      // Opcional: Atualizar o estado local 'todasMesas' se necessário, ou recarregar da API
+      // Para simplificar e garantir consistência, pode ser melhor recarregar as mesas
+      // ou confiar que a página de mesas fará o fetch atualizado.
+      // Se for atualizar localmente, garanta que o objeto da mesa seja atualizado corretamente.
+      // Exemplo de atualização local (cuidado com a consistência):
+      // setTodasMesas(prevMesas => 
+      //   prevMesas.map(m => m.id === mesaId ? { ...m, status: novoStatus } : m)
+      // );
+      console.log(`Status da mesa ${mesaId} atualizado para ${novoStatus} via API`);
+    } catch (error) {
+      console.error("Erro ao atualizar status da mesa via API:", error);
+      toast({
+        title: "Erro ao atualizar status da mesa",
+        description: error instanceof Error ? error.message : "Não foi possível atualizar o status da mesa.",
+        variant: "destructive",
+      });
     }
-  }
+  };
 
   // Função para finalizar pedido
   const finalizarPedido = async () => {
@@ -508,7 +544,7 @@ export default function NovoPedidoPage() {
 
     // Atualizar o status da mesa para "Ocupada" se for atendimento em mesa
     if (tipoAtendimento === "mesa" && mesaSelecionada) {
-      atualizarStatusMesa(mesaSelecionada, "Ocupada")
+      await atualizarStatusMesaAPI(mesaSelecionada, "Ocupada"); // Chamar a função da API
     }
 
     let mensagem = `Pedido ${pedidoId} no valor de R$ ${total.toFixed(2)} foi registrado.`

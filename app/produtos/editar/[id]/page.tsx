@@ -15,7 +15,6 @@ import { useEffect, useState } from "react"
 import { useToast } from "@/components/ui/use-toast"
 import { useRouter } from "next/navigation"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { produtosData } from "../../data"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 
@@ -132,30 +131,41 @@ export default function EditarProdutoPage({ params }: { params: { id: string } }
   const categorias = ["Pizzas", "Hambúrgueres", "Bebidas", "Acompanhamentos", "Saladas", "Sobremesas"]
 
   useEffect(() => {
-    // Buscar o produto pelo ID
-    const produtoEncontrado = produtosData.find((p) => p.id === Number(id))
-
-    if (produtoEncontrado) {
-      // Garantir que todos os arrays estejam inicializados
-      setProduto({
-        ...produtoEncontrado,
-        sabores: produtoEncontrado.sabores || [],
-        bordas: produtoEncontrado.bordas || [],
-        ingredientes: produtoEncontrado.ingredientes || [],
-        promocoes: produtoEncontrado.promocoes || [],
-        perguntas: produtoEncontrado.perguntas || [],
-      })
-    } else {
-      // Se não encontrar o produto, mostrar mensagem e redirecionar
-      toast({
-        title: "Produto não encontrado",
-        description: "O produto que você está tentando editar não existe.",
-        variant: "destructive",
-      })
-      router.push("/produtos")
+    const fetchProduto = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch(`/api/produtos/${id}`)
+        if (!response.ok) {
+          throw new Error("Produto não encontrado ou erro na API")
+        }
+        const data = await response.json()
+        if (data.success && data.data) {
+          setProduto({
+            ...data.data,
+            sabores: data.data.sabores || [],
+            bordas: data.data.bordas || [],
+            ingredientes: data.data.ingredientes || [],
+            promocoes: data.data.promocoes || [],
+            perguntas: data.data.perguntas || [],
+          })
+        } else {
+          throw new Error(data.error || "Erro ao buscar dados do produto")
+        }
+      } catch (error: any) {
+        toast({
+          title: "Erro ao carregar produto",
+          description: error.message || "Não foi possível carregar os dados do produto.",
+          variant: "destructive",
+        })
+        router.push("/produtos")
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    setIsLoading(false)
+    if (id) {
+      fetchProduto()
+    }
   }, [id, router, toast])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -197,10 +207,24 @@ export default function EditarProdutoPage({ params }: { params: { id: string } }
         }
       }
 
-      // Atualizar o produto no array produtosData
-      const index = produtosData.findIndex((p) => p.id === Number(id))
-      if (index !== -1) {
-        produtosData[index] = { ...produto }
+      // Enviar dados atualizados para a API
+      const response = await fetch(`/api/produtos/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(produto),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`)
+      }
+
+      const responseData = await response.json()
+
+      if (!responseData.success) {
+        throw new Error(responseData.error || "Erro desconhecido ao atualizar produto")
       }
 
       toast({
@@ -210,11 +234,11 @@ export default function EditarProdutoPage({ params }: { params: { id: string } }
 
       // Redirecionar para a página de produtos
       router.push("/produtos")
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao atualizar produto:", error)
       toast({
         title: "Erro ao atualizar",
-        description: "Ocorreu um erro ao atualizar o produto. Tente novamente.",
+        description: error.message || "Ocorreu um erro ao atualizar o produto. Tente novamente.",
         variant: "destructive",
       })
     } finally {
