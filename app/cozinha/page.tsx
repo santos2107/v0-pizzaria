@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CheckCircle, Clock } from "lucide-react"
+import { CheckCircle, Clock, RefreshCw } from "lucide-react"
 import { useEffect, useState } from "react"
 import { ProgressBar } from "../pedidos/progress-bar"
 import { formatTime, getElapsedTime } from "@/lib/utils"
@@ -41,7 +41,7 @@ interface PedidosCozinha {
   horario: string
   cliente: string
   itens: PedidoItem[]
-  status: "Pendente" | "Em Preparo" | "Concluído"
+  status: "Pendente" | "Em Preparo" | "Concluído" | "finalizado" | "Em Entrega"
   tipoAtendimento: string
   statusUpdatedAt?: Record<string, string>
 }
@@ -60,6 +60,7 @@ export default function CozinhaPage() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [atualizando, setAtualizando] = useState(false)
 
   // Hook de toast para notificações
   const { toast } = useToast()
@@ -84,53 +85,62 @@ export default function CozinhaPage() {
     })
   }
 
+  // Função para carregar pedidos
+  const carregarPedidos = async () => {
+    try {
+      setAtualizando(true)
+
+      // Obter pedidos do sistema
+      const pedidosDoSistema = await obterPedidos()
+
+      if (!Array.isArray(pedidosDoSistema)) {
+        throw new Error("Formato de dados inválido")
+      }
+
+      // Filtrar e converter pedidos para o formato da cozinha
+      const pedidosCozinha = pedidosDoSistema
+        .filter((p) => p && p.id && p.startTime) // Validar dados necessários
+        .map((p) => ({
+          id: p.id,
+          startTime: p.startTime,
+          horario: formatTime(new Date(p.startTime)) + ` (${getElapsedTime(p.startTime)})`,
+          cliente: p.cliente || (p.mesaId ? `Mesa ${p.mesaId}` : "Cliente não identificado"),
+          itens: converterItens(p.itens || []),
+          status: p.status as "Pendente" | "Em Preparo" | "Concluído" | "finalizado" | "Em Entrega",
+          tipoAtendimento: p.tipoAtendimento || "delivery",
+          statusUpdatedAt: p.statusUpdatedAt || {},
+        }))
+
+      // Separar pedidos em pendentes e concluídos
+      // Na cozinha, só mostramos pedidos Pendentes e Em Preparo na aba Pendentes
+      const pendentes = pedidosCozinha.filter((p) => 
+        p.status === "Pendente" || 
+        p.status === "Em Preparo"
+      )
+
+      const concluidos = pedidosCozinha.filter((p) => 
+        p.status === "Concluído" || 
+        p.status === "finalizado" || 
+        p.status === "Em Entrega"
+      )
+
+      setPedidos({
+        Pendentes: pendentes,
+        Concluídos: concluidos,
+      })
+
+      setError(null)
+    } catch (err) {
+      console.error("Erro ao carregar pedidos:", err)
+      setError("Não foi possível carregar os pedidos. Tente novamente mais tarde.")
+    } finally {
+      setLoading(false)
+      setAtualizando(false)
+    }
+  }
+
   // Efeito para carregar pedidos do sistema
   useEffect(() => {
-    const carregarPedidos = async () => {
-      try {
-        setLoading(true)
-
-        // Obter pedidos do sistema
-        const pedidosDoSistema = await obterPedidos()
-
-        if (!Array.isArray(pedidosDoSistema)) {
-          throw new Error("Formato de dados inválido")
-        }
-
-        // Filtrar e converter pedidos para o formato da cozinha
-        const pedidosCozinha = pedidosDoSistema
-          .filter((p) => p && p.id && p.startTime) // Validar dados necessários
-          .map((p) => ({
-            id: p.id,
-            startTime: p.startTime,
-            horario: formatTime(new Date(p.startTime)) + ` (${getElapsedTime(p.startTime)})`,
-            cliente: p.cliente || (p.mesaId ? `Mesa ${p.mesaId}` : "Cliente não identificado"),
-            itens: converterItens(p.itens || []),
-            status: p.status as "Pendente" | "Em Preparo" | "Concluído",
-            tipoAtendimento: p.tipoAtendimento || "delivery",
-            statusUpdatedAt: p.statusUpdatedAt || {},
-          }))
-
-        // Separar pedidos em pendentes e concluídos
-        // Na cozinha, só mostramos pedidos Pendentes e Em Preparo na aba Pendentes
-        const pendentes = pedidosCozinha.filter((p) => p.status === "Pendente" || p.status === "Em Preparo")
-
-        const concluidos = pedidosCozinha.filter((p) => p.status === "Concluído")
-
-        setPedidos({
-          Pendentes: pendentes,
-          Concluídos: concluidos,
-        })
-
-        setError(null)
-      } catch (err) {
-        console.error("Erro ao carregar pedidos:", err)
-        setError("Não foi possível carregar os pedidos. Tente novamente mais tarde.")
-      } finally {
-        setLoading(false)
-      }
-    }
-
     // Carregar pedidos inicialmente
     carregarPedidos()
 
@@ -176,30 +186,7 @@ export default function CozinhaPage() {
         }
 
         // Atualizar a lista de pedidos após as alterações
-        const pedidosAtualizados = await obterPedidos()
-
-        // Filtrar e converter pedidos para o formato da cozinha
-        const pedidosCozinha = pedidosAtualizados
-          .filter((p) => p && p.id && p.startTime)
-          .map((p) => ({
-            id: p.id,
-            startTime: p.startTime,
-            horario: formatTime(new Date(p.startTime)) + ` (${getElapsedTime(p.startTime)})`,
-            cliente: p.cliente || (p.mesaId ? `Mesa ${p.mesaId}` : "Cliente não identificado"),
-            itens: converterItens(p.itens || []),
-            status: p.status as "Pendente" | "Em Preparo" | "Concluído",
-            tipoAtendimento: p.tipoAtendimento || "delivery",
-            statusUpdatedAt: p.statusUpdatedAt || {},
-          }))
-
-        // Separar pedidos em pendentes e concluídos
-        const pendentes = pedidosCozinha.filter((p) => p.status === "Pendente" || p.status === "Em Preparo")
-        const concluidos = pedidosCozinha.filter((p) => p.status === "Concluído")
-
-        setPedidos({
-          Pendentes: pendentes,
-          Concluídos: concluidos,
-        })
+        await carregarPedidos()
       } catch (error) {
         console.error("Erro ao atualizar status dos pedidos:", error)
       }
@@ -218,15 +205,18 @@ export default function CozinhaPage() {
       // Atualizar a interface
       setPedidos((prev) => {
         const pendentesAtualizados = prev.Pendentes.filter((p) => p.id !== id)
-
+        const pedidoAtualizado = prev.Pendentes.find((p) => p.id === id)
+        
         toast({
           title: "Pedido pronto",
           description: `O pedido ${id} foi marcado como pronto e está aguardando entrega.`,
         })
 
         return {
-          ...prev,
           Pendentes: pendentesAtualizados,
+          Concluídos: pedidoAtualizado 
+            ? [...prev.Concluídos, {...pedidoAtualizado, status: "Em Entrega"}] 
+            : prev.Concluídos
         }
       })
     } catch (error) {
@@ -237,6 +227,15 @@ export default function CozinhaPage() {
         description: "Não foi possível marcar o pedido como pronto. Tente novamente.",
       })
     }
+  }
+
+  // Função para atualizar manualmente os pedidos
+  const atualizarPedidos = () => {
+    carregarPedidos()
+    toast({
+      title: "Atualizando",
+      description: "Lista de pedidos atualizada",
+    })
   }
 
   // Renderizar estado de carregamento
@@ -259,6 +258,7 @@ export default function CozinhaPage() {
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+        <Button onClick={atualizarPedidos}>Tentar novamente</Button>
       </div>
     )
   }
@@ -267,6 +267,14 @@ export default function CozinhaPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Cozinha</h1>
+        <Button 
+          variant="outline" 
+          onClick={atualizarPedidos} 
+          disabled={atualizando}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${atualizando ? 'animate-spin' : ''}`} />
+          {atualizando ? 'Atualizando...' : 'Atualizar'}
+        </Button>
       </div>
 
       <Tabs defaultValue="Pendentes">
@@ -378,6 +386,11 @@ export default function CozinhaPage() {
                           {item.observacao && <p className="text-sm text-gray-500 mt-1">Obs: {item.observacao}</p>}
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-4 text-sm text-gray-500">
+                      Status: {pedido.status === "Em Entrega" ? "Pronto para entrega" : 
+                              pedido.status === "Concluído" || pedido.status === "finalizado" ? 
+                              "Finalizado" : pedido.status}
                     </div>
                   </CardContent>
                 </Card>
