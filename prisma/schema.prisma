@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL") // Obtenha do Supabase
+}
+
+// Modelo para perfis de usuário (corresponde à tabela 'profiles' no Supabase Auth)
+model Profile {
+  id        String   @id @db.Uuid
+  name      String?
+  email     String?
+  role      String   @default("customer")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  pedidos   Pedido[]
+
+  @@map("profiles")
+}
+
+// Modelo para produtos (pizzas, bebidas, etc.)
+model Produto {
+  id          Int       @id @default(autoincrement())
+  nome        String
+  descricao   String?
+  preco       Decimal   @db.Decimal(10, 2)
+  categoria   String
+  imagemUrl   String?   @map("imagem_url")
+  disponivel  Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  itensPedido ItemPedido[]
+
+  @@map("produtos")
+}
+
+// Modelo para clientes
+model Cliente {
+  id          Int       @id @default(autoincrement())
+  nome        String
+  telefone    String?
+  email       String?
+  endereco    String?
+  bairro      String?
+  cidade      String?
+  cep         String?
+  observacoes String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  pedidos     Pedido[]
+  reservas    Reserva[]
+
+  @@map("clientes")
+}
+
+// Modelo para mesas
+model Mesa {
+  id           Int       @id @default(autoincrement())
+  numero       String    @unique
+  capacidade   Int
+  status       String    @default("Disponível")
+  localizacao  String?
+  observacoes  String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  pedidos      Pedido[]
+  reservas     Reserva[]
+
+  @@map("mesas")
+}
+
+// Modelo para pedidos
+model Pedido {
+  id           Int         @id @default(autoincrement())
+  clienteId    Int?        @map("cliente_id")
+  mesaId       Int?        @map("mesa_id")
+  profileId    String?     @map("profile_id") @db.Uuid
+  status       String      @default("Pendente")
+  tipoEntrega  String?     @default("Local") @map("tipo_entrega")
+  valorTotal   Decimal     @default(0) @map("valor_total") @db.Decimal(10, 2)
+  observacoes  String?
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  cliente      Cliente?    @relation(fields: [clienteId], references: [id])
+  mesa         Mesa?       @relation(fields: [mesaId], references: [id])
+  profile      Profile?    @relation(fields: [profileId], references: [id])
+  itensPedido  ItemPedido[]
+
+  @@map("pedidos")
+}
+
+// Modelo para itens de pedido
+model ItemPedido {
+  id            Int       @id @default(autoincrement())
+  pedidoId      Int       @map("pedido_id")
+  produtoId     Int       @map("produto_id")
+  quantidade    Int
+  precoUnitario Decimal   @map("preco_unitario") @db.Decimal(10, 2)
+  observacoes   String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relações
+  pedido        Pedido    @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produto       Produto   @relation(fields: [produtoId], references: [id])
+
+  @@map("itens_pedido")
+}
+
+// Modelo para reservas
+model Reserva {
+  id          Int       @id @default(autoincrement())
+  clienteId   Int?      @map("cliente_id")
+  mesaId      Int?      @map("mesa_id")
+  data        DateTime  @db.Date
+  horaInicio  DateTime  @map("hora_inicio") @db.Time(6)
+  horaFim     DateTime  @map("hora_fim") @db.Time(6)
+  numPessoas  Int       @map("num_pessoas")
+  status      String    @default("Confirmada")
+  observacoes String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  // Relações
+  cliente     Cliente?  @relation(fields: [clienteId], references: [id])
+  mesa        Mesa?     @relation(fields: [mesaId], references: [id])
+
+  @@map("reservas")
+}

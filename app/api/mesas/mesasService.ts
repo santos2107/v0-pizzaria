@@ -122,4 +122,3 @@ export const separarMesas = (idMesaPrincipal: number) => {
   }
   return null;
 };
-

@@ -17,12 +17,10 @@ export default function CardapioDigitalLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <div className="min-h-screen">{children}</div>
-        </ThemeProvider>
-      </body>
-    </html>
+    <div className={`min-h-screen ${inter.className}`}>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+        {children}
+      </ThemeProvider>
+    </div>
   )
 }

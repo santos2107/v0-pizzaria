@@ -1,124 +1,57 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { validateApiKey } from "@/middleware/api-auth"
-import { produtosData, atualizarProduto, excluirProduto } from "@/app/produtos/data"
+import { supabaseServer } from "@/lib/supabaseServer"
 
-// GET /api/produtos/[id] - Obter um produto específico
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  // Validar API key
-  const authError = await validateApiKey(request)
-  if (authError) return authError
-
-  const id = Number.parseInt(params.id)
-
-  if (isNaN(id)) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "ID inválido",
-      },
-      { status: 400 },
-    )
-  }
-
-  const produto = produtosData.find((p) => p.id === id)
-
-  if (!produto) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Produto não encontrado",
-      },
-      { status: 404 },
-    )
-  }
-
-  return NextResponse.json({
-    success: true,
-    data: produto,
-  })
-}
-
-// PUT /api/produtos/[id] - Atualizar um produto
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  // Validar API key
-  const authError = await validateApiKey(request)
-  if (authError) return authError
-
-  const id = Number.parseInt(params.id)
-
-  if (isNaN(id)) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "ID inválido",
-      },
-      { status: 400 },
-    )
-  }
-
   try {
-    const produtoData = await request.json()
-    const produtoAtualizado = atualizarProduto(id, produtoData)
+    const id = params.id
 
-    if (!produtoAtualizado) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Produto não encontrado",
-        },
-        { status: 404 },
-      )
+    const { data, error } = await supabaseServer.from("produtos").select("*").eq("id", id).single()
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({
-      success: true,
-      data: produtoAtualizado,
-    })
+    return NextResponse.json(data)
   } catch (error) {
-    console.error("Erro ao atualizar produto:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Erro ao processar a requisição",
-      },
-      { status: 500 },
-    )
+    console.error("Erro ao buscar produto:", error)
+    return NextResponse.json({ error: "Erro ao buscar produto" }, { status: 500 })
   }
 }
 
-// DELETE /api/produtos/[id] - Excluir um produto
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const id = params.id
+    const produto = await request.json()
+
+    const { data, error } = await supabaseServer.from("produtos").update(produto).eq("id", id).select().single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json(data)
+  } catch (error) {
+    console.error("Erro ao atualizar produto:", error)
+    return NextResponse.json({ error: "Erro ao atualizar produto" }, { status: 500 })
+  }
+}
+
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  // Validar API key
-  const authError = await validateApiKey(request)
-  if (authError) return authError
+  try {
+    const id = params.id
 
-  const id = Number.parseInt(params.id)
+    const { error } = await supabaseServer.from("produtos").delete().eq("id", id)
 
-  if (isNaN(id)) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "ID inválido",
-      },
-      { status: 400 },
-    )
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Erro ao excluir produto:", error)
+    return NextResponse.json({ error: "Erro ao excluir produto" }, { status: 500 })
   }
-
-  const produtoExcluido = excluirProduto(id)
-
-  if (!produtoExcluido) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Produto não encontrado",
-      },
-      { status: 404 },
-    )
-  }
-
-  return NextResponse.json({
-    success: true,
-    message: "Produto excluído com sucesso",
-    data: produtoExcluido,
-  })
 }
