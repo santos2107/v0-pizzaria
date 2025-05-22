@@ -1,125 +1,155 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect, useContext, type FormEvent } from "react"
-import { AuthContext } from "@/contexts/auth-context"
-import { useRouter } from "next/router"
+import { useState, useEffect, type FormEvent, useContext, type ChangeEvent } from "react"
 import Head from "next/head"
+import { useRouter } from "next/router"
 import { toast } from "react-toastify"
+import { FiUpload } from "react-icons/fi"
+import { AuthContext } from "@/contexts/auth-context"
 import { api } from "@/services/api"
 import { supabase } from "@/lib/supabaseClient"
 
-type Category = {
+type CategoryProps = {
   id: string
   name: string
 }
 
-export default function ProductPage() {
+export default function Product() {
   const { user, isAuthenticated, loadingAuth } = useContext(AuthContext)
   const [name, setName] = useState("")
   const [price, setPrice] = useState("")
   const [description, setDescription] = useState("")
-  const [categories, setCategories] = useState<Category[]>([])
-  const [categoryId, setCategoryId] = useState("")
   const [avatarUrl, setAvatarUrl] = useState("")
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageAvatar, setImageAvatar] = useState<File | null>(null)
+  const [categories, setCategories] = useState<CategoryProps[]>([])
+  const [categorySelected, setCategorySelected] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
-  const [loadingCategories, setLoadingCategories] = useState(true)
+  const [loadingCategories, setLoadingCategories] = useState(false)
   const router = useRouter()
 
   // Proteção de rota no cliente
   useEffect(() => {
     if (!loadingAuth && !isAuthenticated) {
       router.push("/")
-      return
-    }
-
-    // Verificar se o usuário é admin
-    if (user && user.role !== "admin") {
-      toast.error("Acesso restrito a administradores")
+    } else if (!loadingAuth && isAuthenticated && user?.role !== "admin") {
+      toast.error("Acesso não autorizado. Apenas administradores podem acessar esta página.")
       router.push("/dashboard")
     }
-  }, [isAuthenticated, loadingAuth, router, user])
+  }, [isAuthenticated, loadingAuth, user, router])
 
-  // Carregar categorias
+  // Carregar categorias usando Supabase JS diretamente
   useEffect(() => {
     async function loadCategories() {
-      try {
-        setLoadingCategories(true)
-        const response = await api.get("/categories")
-        setCategories(response.data)
-      } catch (error) {
-        console.error("Erro ao buscar categorias:", error)
-        toast.error("Erro ao carregar categorias")
-      } finally {
-        setLoadingCategories(false)
+      if (isAuthenticated && user?.role === "admin") {
+        try {
+          setLoadingCategories(true)
+
+          // Usando Supabase JS diretamente
+          const { data, error } = await supabase.from("categories").select("id, name")
+
+          if (error) {
+            throw error
+          }
+
+          setCategories(data || [])
+
+          if (data && data.length > 0) {
+            setCategorySelected(data[0].id)
+          }
+        } catch (error) {
+          console.error("Erro ao buscar categorias:", error)
+          toast.error("Erro ao carregar categorias")
+        } finally {
+          setLoadingCategories(false)
+        }
       }
     }
 
-    if (isAuthenticated && user?.role === "admin") {
-      loadCategories()
-    }
+    loadCategories()
   }, [isAuthenticated, user])
 
-  // Manipular seleção de imagem
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+  // Selecionar imagem
+  function handleFile(e: ChangeEvent<HTMLInputElement>) {
     if (!e.target.files) {
       return
     }
 
-    const file = e.target.files[0]
-    if (!file) {
+    const image = e.target.files[0]
+
+    if (!image) {
       return
     }
 
-    if (file.type === "image/jpeg" || file.type === "image/png") {
-      setImageFile(file)
-      setAvatarUrl(URL.createObjectURL(file))
+    if (image.type === "image/jpeg" || image.type === "image/png") {
+      setImageAvatar(image)
+      setAvatarUrl(URL.createObjectURL(image))
+    } else {
+      toast.error("Tipo de imagem não suportado. Envie uma imagem JPEG ou PNG")
+      setImageAvatar(null)
+      setAvatarUrl("")
     }
   }
 
-  // Enviar formulário
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  // Cadastrar produto
+  async function handleRegister(event: FormEvent) {
+    event.preventDefault()
 
-    if (!name || !price || !description || !categoryId) {
+    if (name === "" || price === "" || description === "" || !categorySelected) {
       toast.warning("Preencha todos os campos!")
+      return
+    }
+
+    if (!imageAvatar) {
+      toast.error("Selecione uma imagem para o produto.")
       return
     }
 
     try {
       setLoading(true)
 
-      let imageUrl = ""
+      // Upload para Supabase Storage
+      const file = imageAvatar
+      const fileName = `${Date.now()}_${file.name.replace(/\s/g, "_")}`
+      const bucketName = "product-banners" // Crie este bucket no Supabase Storage
+      const filePath = `${fileName}` // Pode adicionar pastas se quiser: `public/${fileName}`
 
-      // Upload da imagem para o Supabase Storage
-      if (imageFile) {
-        const fileName = `${Date.now()}-${imageFile.name}`
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("product-images")
-          .upload(fileName, imageFile)
+      const { error: uploadError, data: uploadData } = await supabase.storage.from(bucketName).upload(filePath, file)
 
-        if (uploadError) {
-          throw uploadError
-        }
-
-        // Obter URL pública da imagem
-        const { data: publicUrlData } = supabase.storage.from("product-images").getPublicUrl(uploadData.path)
-
-        imageUrl = publicUrlData.publicUrl
+      if (uploadError) {
+        toast.error("Falha no upload da imagem: " + uploadError.message)
+        setLoading(false)
+        return
       }
 
-      // Criar produto na API
+      // Obter a URL pública
+      const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(filePath)
+
+      if (!urlData || !urlData.publicUrl) {
+        toast.error("Não foi possível obter a URL da imagem.")
+        setLoading(false)
+        return
+      }
+      const bannerUrl = urlData.publicUrl
+
+      // Converter preço para número
+      const priceNumber = Number.parseFloat(price.replace(",", "."))
+      if (isNaN(priceNumber)) {
+        toast.error("Preço inválido. Use apenas números e ponto ou vírgula para decimais.")
+        setLoading(false)
+        return
+      }
+
+      // Criar objeto de dados do produto (JSON em vez de FormData)
       const productData = {
         name,
-        price: Number.parseFloat(price),
+        price: priceNumber,
         description,
-        category_id: categoryId,
-        banner: imageUrl,
+        category_id: categorySelected,
+        banner: bannerUrl,
       }
 
-      await api.post("/products", productData)
+      // Enviar dados para a API
+      const response = await api.post("/product", productData)
 
       toast.success("Produto cadastrado com sucesso!")
 
@@ -127,29 +157,23 @@ export default function ProductPage() {
       setName("")
       setPrice("")
       setDescription("")
-      setCategoryId("")
+      setImageAvatar(null)
       setAvatarUrl("")
-      setImageFile(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao cadastrar produto:", error)
-      toast.error("Erro ao cadastrar produto")
+      toast.error("Erro ao cadastrar produto: " + (error.message || "Erro desconhecido"))
     } finally {
       setLoading(false)
     }
   }
 
   // Mostra um indicador de carregamento enquanto verifica a autenticação
-  if (loadingAuth) {
+  if (loadingAuth || !isAuthenticated || (isAuthenticated && user?.role !== "admin")) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
       </div>
     )
-  }
-
-  // Se não estiver autenticado ou não for admin, não renderiza nada
-  if (!isAuthenticated || (user && user.role !== "admin")) {
-    return null
   }
 
   return (
@@ -161,100 +185,106 @@ export default function ProductPage() {
         <h1 className="text-2xl font-bold mb-6">Novo Produto</h1>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nome do produto</label>
+          <form onSubmit={handleRegister}>
+            <div className="mb-4 flex justify-center">
+              <label className="w-full max-w-xs flex flex-col items-center px-4 py-6 bg-white rounded-lg border-2 border-dashed border-gray-300 cursor-pointer hover:bg-gray-50">
+                <span className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-500">
+                  <FiUpload size={24} />
+                </span>
+                <span className="mt-2 text-sm font-medium text-gray-700">
+                  {avatarUrl ? "Trocar imagem" : "Adicionar imagem"}
+                </span>
+                <input type="file" className="hidden" accept="image/png, image/jpeg" onChange={handleFile} />
+
+                {avatarUrl && (
+                  <div className="mt-4 w-full">
+                    <img
+                      src={avatarUrl || "/placeholder.svg"}
+                      alt="Imagem do produto"
+                      className="w-full h-auto max-h-40 object-contain rounded-md"
+                    />
+                  </div>
+                )}
+              </label>
+            </div>
+
+            <div className="mb-4">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                Nome do Produto
+              </label>
               <input
                 type="text"
+                id="name"
+                placeholder="Nome do produto"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Nome do produto"
-                disabled={loading}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Preço</label>
+            <div className="mb-4">
+              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">
+                Preço
+              </label>
               <input
                 type="text"
+                id="price"
+                placeholder="Preço do produto (ex: 29,90)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                 value={price}
-                onChange={(e) => setPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Preço do produto"
-                disabled={loading}
+                onChange={(e) => setPrice(e.target.value)}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+            <div className="mb-4">
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                Descrição
+              </label>
               <textarea
+                id="description"
+                placeholder="Descreva seu produto..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Descreva seu produto..."
-                rows={4}
-                disabled={loading}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+            <div className="mb-6">
+              <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                Categoria
+              </label>
               {loadingCategories ? (
-                <div className="animate-pulse h-10 bg-gray-200 rounded-md"></div>
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin h-4 w-4 border-t-2 border-b-2 border-orange-500 rounded-full"></div>
+                  <span className="text-sm text-gray-500">Carregando categorias...</span>
+                </div>
               ) : (
                 <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  disabled={loading}
+                  id="category"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+                  value={categorySelected || ""}
+                  onChange={(e) => setCategorySelected(e.target.value)}
                 >
-                  <option value="">Selecione uma categoria</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
+                  {categories.length > 0 ? (
+                    categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhuma categoria encontrada</option>
+                  )}
                 </select>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Imagem do produto</label>
-              <div className="flex items-center space-x-6">
-                <div className="w-32 h-32 relative border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl || "/placeholder.svg"}
-                      alt="Imagem do produto"
-                      className="w-full h-full object-cover rounded-md"
-                    />
-                  ) : (
-                    <span className="text-gray-500 text-sm text-center">Nenhuma imagem selecionada</span>
-                  )}
-                </div>
-                <label className="cursor-pointer bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md">
-                  Selecionar imagem
-                  <input
-                    type="file"
-                    accept="image/png, image/jpeg"
-                    className="hidden"
-                    onChange={handleFile}
-                    disabled={loading}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50"
-              >
-                {loading ? "Cadastrando..." : "Cadastrar"}
-              </button>
-            </div>
+            <button
+              type="submit"
+              className="w-full bg-orange-600 text-white py-2 px-4 rounded-md hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || loadingCategories}
+            >
+              {loading ? "Cadastrando..." : "Cadastrar"}
+            </button>
           </form>
         </div>
       </div>

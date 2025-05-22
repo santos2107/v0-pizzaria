@@ -6,26 +6,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Criar cliente Supabase com contexto da requisição
   const supabase = createServerSupabaseClient({ req, res })
 
-  // Verificar se o usuário está autenticado para operações de escrita
-  if (req.method !== "GET") {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+  // Verificar se o usuário está autenticado
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-    if (!session) {
-      return res.status(401).json({ error: "Não autorizado" })
-    }
+  if (!session) {
+    return res.status(401).json({ error: "Não autorizado" })
+  }
 
-    // Verificar se o usuário é admin para operações de escrita
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", session.user.id)
-      .single()
+  // Verificar se o usuário é admin para operações de escrita
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", session.user.id)
+    .single()
 
-    if (profileError || profile.role !== "admin") {
-      return res.status(403).json({ error: "Acesso negado" })
-    }
+  if (profileError || profile.role !== "admin") {
+    return res.status(403).json({ error: "Acesso negado. Apenas administradores podem gerenciar produtos." })
   }
 
   // GET - Listar produtos
@@ -52,14 +50,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
       const { name, price, description, category_id, banner } = req.body
 
-      if (!name || !price || !description || !category_id) {
+      // Validação básica
+      if (!name || price === undefined || !description || !category_id || !banner) {
         return res.status(400).json({ error: "Todos os campos são obrigatórios" })
       }
 
+      // Verificar se a categoria existe
+      const categoryExists = await prisma.category.findUnique({
+        where: {
+          id: category_id,
+        },
+      })
+
+      if (!categoryExists) {
+        return res.status(400).json({ error: "Categoria não encontrada" })
+      }
+
+      // Converter preço para Decimal
+      const priceDecimal = typeof price === "string" ? Number.parseFloat(price) : price
+
+      if (isNaN(priceDecimal)) {
+        return res.status(400).json({ error: "Preço inválido" })
+      }
+
+      // Criar produto
       const product = await prisma.product.create({
         data: {
           name,
-          price,
+          price: priceDecimal,
           description,
           banner,
           category_id,
