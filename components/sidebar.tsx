@@ -1,32 +1,26 @@
 "use client"
-
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Utensils, ShoppingCart, Users, ClipboardList, Settings, Menu, X, Coffee } from "lucide-react"
+import { LayoutDashboard, Utensils, ShoppingCart, Users, ClipboardList, Settings, Menu, X, Coffee, DollarSign } from "lucide-react"
 import Image from "next/image"
 import { cn } from "@/lib/utils"
-
 interface SidebarProps {
   className?: string
 }
-
 // Mudar a exportação de default para nomeada para manter compatibilidade com o código existente
 // Alterar de:
 // export default function Sidebar({ className }: SidebarProps) {
-
 // Para:
 export function Sidebar({ className }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false)
   const pathname = usePathname()
-
   // Fechar a sidebar ao clicar em um link em telas pequenas
   const closeSidebar = () => {
     if (window.innerWidth < 1024) {
       setIsOpen(false)
     }
   }
-
   // Fechar a sidebar ao redimensionar para tela grande
   useEffect(() => {
     const handleResize = () => {
@@ -34,11 +28,9 @@ export function Sidebar({ className }: SidebarProps) {
         setIsOpen(false)
       }
     }
-
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
-
   const menuItems = [
     {
       title: "Dashboard",
@@ -83,13 +75,18 @@ export function Sidebar({ className }: SidebarProps) {
       active: pathname.startsWith("/clientes"),
     },
     {
+      title: "Financeiro",
+      icon: DollarSign,
+      href: "/financeiro",
+      active: pathname.startsWith("/financeiro"),
+    },
+    {
       title: "Configurações",
       icon: Settings,
       href: "/configuracoes",
       active: pathname.startsWith("/configuracoes"),
     },
   ]
-
   return (
     <>
       {/* Botão hamburger para telas pequenas */}
@@ -99,12 +96,10 @@ export function Sidebar({ className }: SidebarProps) {
       >
         {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </button>
-
       {/* Overlay quando o menu está aberto em telas pequenas */}
       {isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setIsOpen(false)}></div>
       )}
-
       {/* Sidebar */}
       <aside
         className={cn(
@@ -121,7 +116,6 @@ export function Sidebar({ className }: SidebarProps) {
               <span className="text-xl font-bold">Pizzaria do Kassio</span>
             </Link>
           </div>
-
           {/* Menu Items */}
           <nav className="flex-1 overflow-y-auto py-4">
             <ul className="space-y-1 px-2">
@@ -144,7 +138,6 @@ export function Sidebar({ className }: SidebarProps) {
               ))}
             </ul>
           </nav>
-
           {/* Footer */}
           <div className="p-4 border-t text-center text-sm text-muted-foreground">
             <p>© 2023 Pizzaria do Kassio</p>

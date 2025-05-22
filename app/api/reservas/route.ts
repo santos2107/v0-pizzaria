@@ -1,152 +1,97 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server";
 import {
-  reservasData,
-  adicionarReserva,
-  verificarDisponibilidadeMesa,
-  obterReservasPorData,
-} from "@/app/reservas/data/reservas"
-import { mesasData } from "@/app/pedidos/data/mesas"
+  listarReservas,
+  criarReserva,
+  Reserva,
+} from "./reservasService"; // Importar do novo serviço
+// import { validateApiKey } from "@/middleware/api-auth"; // Manter comentado por enquanto
 
 // GET /api/reservas - Listar todas as reservas
 export async function GET(request: NextRequest) {
   try {
-    // Comentando temporariamente a validação da API key para fins de desenvolvimento
-    // const authError = await validateApiKey(request)
-    // if (authError) return authError
+    // const authError = await validateApiKey(request);
+    // if (authError) return authError;
 
-    // Verificar se há filtros
-    const { searchParams } = new URL(request.url)
-    const data = searchParams.get("data")
-    const status = searchParams.get("status")
-    const mesaId = searchParams.get("mesaId")
-    const clienteId = searchParams.get("clienteId")
+    const { searchParams } = new URL(request.url);
+    const data = searchParams.get("data") || undefined;
+    const status = searchParams.get("status") || undefined;
+    const mesaIdParam = searchParams.get("mesaId");
+    const mesaId = mesaIdParam ? parseInt(mesaIdParam, 10) : undefined;
 
-    let reservasFiltradas = [...reservasData]
-
-    // Aplicar filtros
-    if (data) {
-      reservasFiltradas = obterReservasPorData(data)
+    // Validar se mesaId é um número se fornecido
+    if (mesaIdParam && (isNaN(mesaId!) || mesaId === undefined)) {
+        return NextResponse.json(
+            { success: false, error: "Parâmetro 'mesaId' inválido." },
+            { status: 400 }
+        );
     }
 
-    if (status) {
-      reservasFiltradas = reservasFiltradas.filter((reserva) => reserva.status === status)
-    }
+    const filtros = { data, status, mesaId };
+    // Remover chaves com valor undefined para não passar filtros vazios desnecessariamente
+    Object.keys(filtros).forEach(key => filtros[key] === undefined && delete filtros[key]);
 
-    if (mesaId) {
-      const mesaIdNum = Number.parseInt(mesaId)
-      reservasFiltradas = reservasFiltradas.filter((reserva) => reserva.mesaId === mesaIdNum)
-    }
-
-    if (clienteId) {
-      const clienteIdNum = Number.parseInt(clienteId)
-      reservasFiltradas = reservasFiltradas.filter((reserva) => reserva.clienteId === clienteIdNum)
-    }
+    const reservas = listarReservas(filtros);
 
     return NextResponse.json({
       success: true,
-      count: reservasFiltradas.length,
-      data: reservasFiltradas,
-    })
+      count: reservas.length,
+      data: reservas,
+    });
   } catch (error) {
-    console.error("Erro ao processar requisição de reservas:", error)
+    console.error("Erro ao processar requisição de listar reservas:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Erro interno ao processar requisição",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 // POST /api/reservas - Criar uma nova reserva
 export async function POST(request: NextRequest) {
   try {
-    // Comentando temporariamente a validação da API key para fins de desenvolvimento
-    // const authError = await validateApiKey(request)
-    // if (authError) return authError
+    // const authError = await validateApiKey(request);
+    // if (authError) return authError;
 
-    const reservaData = await request.json()
+    const reservaData = await request.json();    
 
-    // Validar dados obrigatórios
-    const camposObrigatorios = ["mesaId", "clienteNome", "clienteTelefone", "data", "hora", "duracao", "pessoas"]
+    // Os campos obrigatórios são validados dentro do reservasService.criarReserva
+    // A lógica de verificar capacidade da mesa e disponibilidade também está no serviço
 
-    for (const campo of camposObrigatorios) {
-      if (!reservaData[campo]) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Campo obrigatório não informado: ${campo}`,
-          },
-          { status: 400 },
-        )
+    const resultado = criarReserva(reservaData as Omit<Reserva, "id" | "criadaEm" | "mesaNumero">);
+
+    if ("error" in resultado) {
+      // Determinar o status code baseado no erro
+      // Ex: se for "Mesa não encontrada", poderia ser 404.
+      // Por simplicidade, usando 400 para erros de validação/negócio.
+      let statusCode = 400;
+      if (resultado.error.includes("não encontrada")) {
+        statusCode = 404;
       }
-    }
-
-    // Verificar se a mesa existe
-    const mesa = mesasData.find((m) => m.id === reservaData.mesaId)
-    if (!mesa) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Mesa não encontrada",
-        },
-        { status: 404 },
-      )
+        { success: false, error: resultado.error },
+        { status: statusCode }
+      );
     }
 
-    // Verificar se a capacidade da mesa é suficiente
-    if (mesa.capacidade < reservaData.pessoas) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `A mesa ${mesa.numero} tem capacidade para apenas ${mesa.capacidade} pessoas`,
-        },
-        { status: 400 },
-      )
-    }
-
-    // Verificar disponibilidade da mesa
-    const disponivel = verificarDisponibilidadeMesa(
-      reservaData.mesaId,
-      reservaData.data,
-      reservaData.hora,
-      reservaData.duracao,
-    )
-
-    if (!disponivel) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Mesa não disponível no horário selecionado",
-        },
-        { status: 400 },
-      )
-    }
-
-    // Adicionar número da mesa
-    reservaData.mesaNumero = mesa.numero
-
-    // Definir status padrão se não informado
-    if (!reservaData.status) {
-      reservaData.status = "pendente"
-    }
-
-    // Criar a reserva
-    const novaReserva = adicionarReserva(reservaData)
-
-    return NextResponse.json({
-      success: true,
-      data: novaReserva,
-    })
-  } catch (error) {
-    console.error("Erro ao criar reserva:", error)
     return NextResponse.json(
-      {
-        success: false,
-        error: "Erro ao processar a requisição",
-      },
-      { status: 500 },
-    )
+      { success: true, data: resultado },
+      { status: 201 } // 201 Created para sucesso na criação
+    );
+  } catch (error) {
+    console.error("Erro ao criar reserva:", error);
+    // Verificar se o erro é de parsing do JSON
+    if (error instanceof SyntaxError) {
+        return NextResponse.json(
+            { success: false, error: "JSON malformatado na requisição." },
+            { status: 400 }
+          );
+    }
+    return NextResponse.json(
+      { success: false, error: "Erro interno ao processar a requisição" },
+      { status: 500 }
+    );
   }
 }
