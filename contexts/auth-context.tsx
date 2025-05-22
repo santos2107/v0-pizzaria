@@ -1,15 +1,14 @@
 "use client"
 
 import { createContext, type ReactNode, useEffect, useState } from "react"
-import type { Session, User as SupabaseAuthUser } from "@supabase/supabase-js" // Tipos do Supabase
-import { supabase } from "@/lib/supabaseClient" // Nosso cliente Supabase
+import type { Session, User as SupabaseAuthUser } from "@supabase/supabase-js"
+import { supabase } from "@/lib/supabaseClient" // Verifique o caminho
 import { useRouter } from "next/navigation"
 import { toast } from "react-toastify"
 
-// Tipos
 type AuthContextData = {
-  user: User | null
-  session: Session | null // Supabase session object
+  user: AppUser | null // Renomeado para AppUser para evitar conflito com SupabaseAuthUser
+  session: Session | null
   isAuthenticated: boolean
   signIn: (credentials: SignInCredentials) => Promise<void>
   signOut: () => Promise<void>
@@ -17,13 +16,13 @@ type AuthContextData = {
   loadingAuth: boolean
 }
 
-// Nossa interface User da aplicação (pode ser igual à do Firebase ou ajustada)
-type User = {
+// Sua interface de usuário da aplicação
+export type AppUser = {
+  // Renomeado
   id: string
-  name?: string // Nome pode vir de uma tabela 'profiles'
+  name?: string
   email?: string
-  // avatarUrl?: string;
-  // role?: string; // Se você tiver um sistema de roles
+  role?: string // Se você for usar roles
 }
 
 type SignInCredentials = {
@@ -32,7 +31,7 @@ type SignInCredentials = {
 }
 
 type SignUpCredentials = {
-  name: string // Vamos precisar salvar isso em uma tabela 'profiles'
+  name: string
   email: string
   password: string
 }
@@ -44,36 +43,33 @@ type AuthProviderProps = {
 export const AuthContext = createContext({} as AuthContextData)
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null)
+  const [appUser, setAppUser] = useState<AppUser | null>(null) // Renomeado
   const [session, setSession] = useState<Session | null>(null)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const router = useRouter()
 
-  const isAuthenticated = !!user && !!session
+  const isAuthenticated = !!appUser && !!session
 
   useEffect(() => {
     setLoadingAuth(true)
-    // Verifica a sessão inicial ao carregar
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      // Se há sessão, busca os dados do usuário (incluindo da tabela 'profiles' se necessário)
       if (session?.user) {
-        fetchUserProfile(session.user)
+        fetchUserProfile(session.user) // Busca o perfil da sua tabela 'users' ou 'profiles'
       } else {
-        setUser(null)
+        setAppUser(null)
       }
       setLoadingAuth(false)
     })
 
-    // Ouve mudanças no estado de autenticação
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session)
-      if (session?.user) {
-        await fetchUserProfile(session.user)
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession)
+      if (currentSession?.user) {
+        await fetchUserProfile(currentSession.user)
       } else {
-        setUser(null)
+        setAppUser(null)
       }
-      setLoadingAuth(false) // Garante que o loading termina após a mudança de estado
+      setLoadingAuth(false)
     })
 
     return () => {
@@ -81,80 +77,60 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [])
 
-  // Função para buscar/criar perfil do usuário na sua tabela 'profiles' ou 'users'
-  async function fetchUserProfile(supabaseUser: SupabaseAuthUser, profileData?: { name?: string }) {
-    if (!supabaseUser.email) {
-      console.error("Supabase user sem email.")
-      setUser(null)
-      return
-    }
-
+  async function fetchUserProfile(supabaseAuthUser: SupabaseAuthUser) {
     try {
-      // Tenta buscar o perfil existente
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles") // Certifique-se que essa tabela existe!
-        .select("id, name, email, role") // Adicione os campos que você tem
-        .eq("id", supabaseUser.id)
+      // Assumindo que sua tabela Prisma 'User' é onde você armazena perfis
+      // e que o 'id' dela corresponde ao 'id' do supabase.auth.user()
+      const { data: profile, error } = await supabase
+        .from("profiles") // Ou 'profiles', dependendo do nome da sua tabela no BD
+        .select(`id, name, email, role`) // Adicione 'role' se tiver
+        .eq("id", supabaseAuthUser.id)
         .single()
 
-      if (profileError && profileError.code !== "PGRST116") {
-        // PGRST116 = 'single row not found'
-        console.error("Erro ao buscar perfil:", profileError)
-        toast.error("Erro ao carregar dados do usuário.")
-        setUser(null) // Limpa o usuário em caso de erro crítico
-        return
+      if (error && error.code !== "PGRST116") {
+        // PGRST116: 'single row not found'
+        console.error("Erro ao buscar perfil:", error)
+        // Não limpe o appUser aqui, pode ser que ele só não tenha perfil ainda
+        // mas está autenticado.
+        // Apenas use os dados do SupabaseAuthUser como fallback.
       }
 
       if (profile) {
-        setUser({
+        setAppUser({
           id: profile.id,
-          name: profile.name || supabaseUser.user_metadata?.full_name || "Usuário",
-          email: profile.email || supabaseUser.email,
-          // role: profile.role // Se tiver role
-        })
-      } else if (profileData?.name) {
-        // Se o perfil não existe (ex: após o signup) e temos dados para criar (como o nome)
-        // Isso é útil se o signup não criar o perfil imediatamente
-        console.warn("Perfil não encontrado, pode precisar ser criado após o signup se signUp não o fez.")
-        setUser({
-          // Usuário básico do Auth enquanto perfil não é criado/buscado
-          id: supabaseUser.id,
-          email: supabaseUser.email,
-          name: profileData.name, // Nome passado do signup
+          name: profile.name || supabaseAuthUser.user_metadata?.name,
+          email: profile.email || supabaseAuthUser.email,
+          role: profile.role, // Se tiver
         })
       } else {
-        // Usuário autenticado mas sem perfil e sem dados para criar um no momento
-        // Pode acontecer se o perfil for deletado manualmente ou erro no signup
-        setUser({
-          id: supabaseUser.id,
-          email: supabaseUser.email,
-          name: supabaseUser.user_metadata?.full_name || "Usuário",
+        // Se não encontrou perfil, use os dados do auth.user se disponíveis
+        setAppUser({
+          id: supabaseAuthUser.id,
+          name: supabaseAuthUser.user_metadata?.name || "Usuário", // 'name' passado no options do signUp
+          email: supabaseAuthUser.email,
         })
       }
-    } catch (error) {
-      console.error("Erro no fetchUserProfile:", error)
-      toast.error("Erro ao processar dados do usuário.")
-      setUser(null)
+    } catch (e) {
+      console.error("Exceção em fetchUserProfile:", e)
+      setAppUser({
+        // Fallback para dados do Supabase Auth User
+        id: supabaseAuthUser.id,
+        name: supabaseAuthUser.user_metadata?.name || "Usuário",
+        email: supabaseAuthUser.email,
+      })
     }
   }
 
   async function signIn({ email, password }: SignInCredentials) {
     setLoadingAuth(true)
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      if (!data.session || !data.user) throw new Error("Login falhou, sem sessão ou usuário.")
-
-      // onAuthStateChange irá lidar com a atualização de session e user
-      toast.success("Login realizado com sucesso!")
+      // onAuthStateChange cuidará de definir user e session
+      toast.success("Login bem-sucedido!")
       router.push("/dashboard")
     } catch (error: any) {
-      console.error("Erro no SignIn:", error)
-      toast.error(error.message || "E-mail ou senha inválidos.")
+      toast.error(error.message || "Falha no login.")
     } finally {
       setLoadingAuth(false)
     }
@@ -163,59 +139,54 @@ export function AuthProvider({ children }: AuthProviderProps) {
   async function signUp({ name, email, password }: SignUpCredentials) {
     setLoadingAuth(true)
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: {
-            // Esses dados vão para a coluna 'raw_user_meta_data' da tabela auth.users
-            name: name, // Ou full_name, conforme preferir
-          },
+          data: { name: name }, // Adiciona 'name' aos metadados do usuário no Supabase Auth
         },
       })
 
-      if (authError) throw authError
-      if (!authData.user) throw new Error("Cadastro falhou, usuário não criado.")
+      if (signUpError) throw signUpError
+      if (!signUpData.user) throw new Error("Usuário não retornado após signUp.")
 
-      // **Importante:** Criar o perfil na sua tabela 'profiles' (ou 'users')
-      // O trigger do Supabase pode fazer isso, ou você faz explicitamente aqui.
-      // Vamos fazer explicitamente para clareza:
+      // **CRÍTICO:** Inserir na sua tabela 'users' (ou 'profiles') do Prisma/Supabase
+      // O ID do Supabase Auth User é signUpData.user.id
+      // O nome é 'name', email é 'email'.
       const { error: profileError } = await supabase
-        .from("profiles") // Certifique-se que essa tabela existe!
-        .insert({
-          id: authData.user.id, // Mesmo ID do auth.users
-          name: name,
-          email: email, // Pode ser redundante se você sempre buscar o email de auth.user.email
-          // created_at: new Date().toISOString(), // Supabase pode gerenciar isso com default now()
-          role: "customer", // Exemplo de role padrão
-        })
+        .from("profiles") // Certifique-se que esta é a tabela correta!
+        .insert([
+          {
+            id: signUpData.user.id, // ID do Supabase Auth
+            name: name,
+            email: email,
+            role: "customer", // Role padrão
+            // created_at e updated_at devem ter default no BD
+          },
+        ])
 
       if (profileError) {
-        console.error("Erro ao criar perfil do usuário:", profileError)
-        // Considere o que fazer aqui. O usuário foi criado no Auth, mas não no profiles.
-        // Poderia tentar deletar o usuário do Auth ou logar o erro para correção manual.
+        console.error("Erro ao criar perfil local:", profileError)
+        // Usuário foi criado no Supabase Auth, mas não no 'users'.
+        // Isso precisa ser tratado (ex: logar para admin, ou tentar deletar do Auth)
         toast.error("Erro ao finalizar cadastro do perfil. Contate o suporte.")
-        // Forçar logout se o perfil for crítico
-        await supabase.auth.signOut()
-        router.push("/signup") // ou '/'
-        return
+        await supabase.auth.signOut() // Desloga para evitar estado inconsistente
+        return // Não continua se o perfil não foi criado
       }
 
-      // onAuthStateChange irá lidar com a atualização de session e user (com o perfil)
-      // Se a confirmação de email estiver ATIVADA, o usuário não será logado automaticamente.
-      // Se estiver DESATIVADA, onAuthStateChange será chamado com a nova sessão.
-      if (authData.session) {
-        // Usuário logado (confirmação desativada ou já confirmou)
-        toast.success("Cadastro realizado com sucesso! Redirecionando...")
+      // onAuthStateChange vai lidar com a atualização do estado do usuário
+      // Se a confirmação de email estiver ATIVADA no Supabase, o usuário não será logado.
+      if (signUpData.session) {
+        // Logado automaticamente (confirmação de email desativada)
+        toast.success("Cadastro realizado! Bem-vindo!")
         router.push("/dashboard")
       } else {
         // Confirmação de email pendente
         toast.info("Cadastro realizado! Verifique seu e-mail para confirmar a conta.")
-        router.push("/") // Redireciona para login ou uma página de "verifique seu email"
+        router.push("/") // Volta para login
       }
     } catch (error: any) {
-      console.error("Erro no SignUp:", error)
-      toast.error(error.message || "Erro ao tentar cadastrar.")
+      toast.error(error.message || "Erro ao cadastrar.")
     } finally {
       setLoadingAuth(false)
     }
@@ -226,19 +197,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
-      // setUser e setSession serão atualizados pelo onAuthStateChange
+      // onAuthStateChange vai limpar user e session
       toast.info("Você foi desconectado.")
       router.push("/")
     } catch (error: any) {
-      console.error("Erro no SignOut:", error)
-      toast.error(error.message || "Erro ao tentar desconectar.")
+      toast.error(error.message || "Erro ao desconectar.")
     } finally {
       setLoadingAuth(false)
     }
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, isAuthenticated, signIn, signOut, signUp, loadingAuth }}>
+    <AuthContext.Provider value={{ user: appUser, session, isAuthenticated, signIn, signOut, signUp, loadingAuth }}>
       {children}
     </AuthContext.Provider>
   )
