@@ -1,408 +1,383 @@
 "use client"
 
+import { useState, useEffect, useContext } from "react"
+import { useRouter } from "next/navigation"
+import { AuthContext } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CheckCircle, Clock, RefreshCw } from "lucide-react"
-import { useEffect, useState } from "react"
-import { ProgressBar } from "../pedidos/progress-bar"
-import { formatTime, getElapsedTime } from "@/lib/utils"
-import { useToast } from "@/components/ui/use-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { obterPedidos, atualizarStatusPedido } from "../pedidos/actions"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { toast } from "react-hot-toast"
+import { Loader2, RefreshCw, Clock, CheckCircle, ChefHat, Bell, Coffee, Timer } from "lucide-react"
 
-// Interface para os itens do pedido
-interface PedidoItem {
-  nome: string
-  quantidade: number
-  observacao: string
-}
-
-// Interface para os pedidos
-interface Pedido {
+// Tipos
+type OrderItem = {
   id: string
-  startTime: string
-  horario: string
-  cliente: string
-  itens: PedidoItem[] | string[] // Aceita ambos os formatos
-  total: number
-  pagamento: string
-  endereco: string
-  status: string
-  mesaId?: number | null
-  tipoAtendimento: string
-  statusUpdatedAt?: Record<string, string>
+  name: string
+  quantity: number
+  observation?: string
+  status: "pending" | "preparing" | "ready"
 }
 
-// Interface para o estado dos pedidos na cozinha
-interface PedidosCozinha {
+type Order = {
   id: string
-  startTime: string
-  horario: string
-  cliente: string
-  itens: PedidoItem[]
-  status: "Pendente" | "Em Preparo" | "Concluído" | "finalizado" | "Em Entrega"
-  tipoAtendimento: string
-  statusUpdatedAt?: Record<string, string>
+  number: string
+  table?: string
+  customerName?: string
+  createdAt: string
+  items: OrderItem[]
+  status: "pending" | "preparing" | "ready"
 }
 
-// Interface para o estado dos pedidos
-interface PedidosState {
-  Pendentes: PedidosCozinha[]
-  Concluídos: PedidosCozinha[]
-}
-
-export default function CozinhaPage() {
-  // Estado para armazenar os pedidos
-  const [pedidos, setPedidos] = useState<PedidosState>({
-    Pendentes: [],
-    Concluídos: [],
-  })
+export default function KitchenPage() {
+  const { user, isAuthenticated, loadingAuth } = useContext(AuthContext)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [atualizando, setAtualizando] = useState(false)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [refreshing, setRefreshing] = useState(false)
+  const router = useRouter()
 
-  // Hook de toast para notificações
-  const { toast } = useToast()
-
-  // Função para converter itens de string para objeto PedidoItem
-  const converterItens = (itens: string[] | PedidoItem[]): PedidoItem[] => {
-    if (itens.length === 0) return []
-
-    // Verificar se os itens já são do tipo PedidoItem
-    if (typeof itens[0] === "object" && "nome" in itens[0]) {
-      return itens as PedidoItem[]
+  // Proteção de rota
+  useEffect(() => {
+    if (!loadingAuth && !isAuthenticated) {
+      toast.error("Faça login para acessar esta página")
+      router.push("/")
     }
+  }, [isAuthenticated, loadingAuth, router])
 
-    // Converter de string para PedidoItem
-    return (itens as string[]).map((item) => {
-      const [quantidade, nome] = item.split("x ").map((part) => part.trim())
-      return {
-        nome: nome || item,
-        quantidade: Number.parseInt(quantidade) || 1,
-        observacao: "",
-      }
-    })
-  }
+  // Carregar pedidos
+  useEffect(() => {
+    if (isAuthenticated && !loadingAuth) {
+      loadOrders()
+    }
+  }, [isAuthenticated, loadingAuth])
 
-  // Função para carregar pedidos
-  const carregarPedidos = async () => {
+  // Carregar pedidos (simulado)
+  async function loadOrders() {
+    setLoading(true)
     try {
-      setAtualizando(true)
+      // Simulando carregamento
+      await new Promise((resolve) => setTimeout(resolve, 1000))
 
-      // Obter pedidos do sistema
-      const pedidosDoSistema = await obterPedidos()
+      // Dados simulados
+      const mockOrders: Order[] = [
+        {
+          id: "1",
+          number: "#1234",
+          table: "Mesa 2",
+          customerName: "João Silva",
+          createdAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+          status: "preparing",
+          items: [
+            {
+              id: "1",
+              name: "Pizza Margherita",
+              quantity: 1,
+              status: "preparing",
+            },
+            {
+              id: "2",
+              name: "Pizza Calabresa",
+              quantity: 1,
+              status: "pending",
+              observation: "Sem cebola, por favor",
+            },
+          ],
+        },
+        {
+          id: "2",
+          number: "#1235",
+          table: "Mesa 5",
+          customerName: "Família Oliveira",
+          createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+          status: "preparing",
+          items: [
+            {
+              id: "3",
+              name: "Pizza Quatro Queijos",
+              quantity: 1,
+              status: "ready",
+            },
+            {
+              id: "4",
+              name: "Pizza Portuguesa",
+              quantity: 1,
+              status: "preparing",
+            },
+            {
+              id: "5",
+              name: "Pizza Frango com Catupiry",
+              quantity: 1,
+              status: "pending",
+            },
+          ],
+        },
+        {
+          id: "3",
+          number: "#1236",
+          table: "Mesa 7",
+          customerName: "Carlos Pereira",
+          createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+          status: "pending",
+          items: [
+            {
+              id: "6",
+              name: "Pizza Pepperoni",
+              quantity: 2,
+              status: "pending",
+            },
+          ],
+        },
+      ]
 
-      if (!Array.isArray(pedidosDoSistema)) {
-        throw new Error("Formato de dados inválido")
-      }
-
-      // Filtrar e converter pedidos para o formato da cozinha
-      const pedidosCozinha = pedidosDoSistema
-        .filter((p) => p && p.id && p.startTime) // Validar dados necessários
-        .map((p) => ({
-          id: p.id,
-          startTime: p.startTime,
-          horario: formatTime(new Date(p.startTime)) + ` (${getElapsedTime(p.startTime)})`,
-          cliente: p.cliente || (p.mesaId ? `Mesa ${p.mesaId}` : "Cliente não identificado"),
-          itens: converterItens(p.itens || []),
-          status: p.status as "Pendente" | "Em Preparo" | "Concluído" | "finalizado" | "Em Entrega",
-          tipoAtendimento: p.tipoAtendimento || "delivery",
-          statusUpdatedAt: p.statusUpdatedAt || {},
-        }))
-
-      // Separar pedidos em pendentes e concluídos
-      // Na cozinha, só mostramos pedidos Pendentes e Em Preparo na aba Pendentes
-      const pendentes = pedidosCozinha.filter((p) => 
-        p.status === "Pendente" || 
-        p.status === "Em Preparo"
-      )
-
-      const concluidos = pedidosCozinha.filter((p) => 
-        p.status === "Concluído" || 
-        p.status === "finalizado" || 
-        p.status === "Em Entrega"
-      )
-
-      setPedidos({
-        Pendentes: pendentes,
-        Concluídos: concluidos,
-      })
-
-      setError(null)
-    } catch (err) {
-      console.error("Erro ao carregar pedidos:", err)
-      setError("Não foi possível carregar os pedidos. Tente novamente mais tarde.")
+      setOrders(mockOrders)
+    } catch (error) {
+      console.error("Erro ao carregar pedidos:", error)
+      toast.error("Erro ao carregar pedidos")
     } finally {
       setLoading(false)
-      setAtualizando(false)
     }
   }
 
-  // Efeito para carregar pedidos do sistema
-  useEffect(() => {
-    // Carregar pedidos inicialmente
-    carregarPedidos()
+  // Atualizar pedidos
+  async function handleRefresh() {
+    setRefreshing(true)
+    await loadOrders()
+    setRefreshing(false)
+    toast.success("Pedidos atualizados!")
+  }
 
-    // Configurar intervalo para atualizar pedidos a cada 10 segundos
-    const intervalId = setInterval(carregarPedidos, 10000)
+  // Atualizar status do item
+  function updateItemStatus(orderId: string, itemId: string, newStatus: "pending" | "preparing" | "ready") {
+    setOrders((prevOrders) => {
+      return prevOrders.map((order) => {
+        if (order.id !== orderId) return order
 
-    return () => clearInterval(intervalId)
-  }, [])
+        // Atualizar o item específico
+        const updatedItems = order.items.map((item) => (item.id === itemId ? { ...item, status: newStatus } : item))
 
-  // Efeito para atualizar o status dos pedidos automaticamente
-  useEffect(() => {
-    const timer = setInterval(async () => {
-      try {
-        // Obter todos os pedidos atuais
-        const todosPedidos = await obterPedidos()
+        // Calcular o novo status do pedido com base nos itens
+        let newOrderStatus: "pending" | "preparing" | "ready" = "pending"
 
-        // Filtrar apenas os pedidos pendentes e em preparo
-        const pedidosAtivos = todosPedidos.filter((p) => p.status === "Pendente" || p.status === "Em Preparo")
-
-        // Para cada pedido ativo, verificar se precisa atualizar o status
-        for (const pedido of pedidosAtivos) {
-          const startTime = new Date(pedido.startTime).getTime()
-          const now = Date.now()
-          const elapsed = now - startTime
-
-          if (pedido.status === "Pendente" && elapsed >= 60 * 1000) {
-            // Se passou 1 minuto e está pendente, atualizar para "Em Preparo"
-            await atualizarStatusPedido(pedido.id, "Em Preparo")
-
-            toast({
-              title: "Pedido em preparo",
-              description: `O pedido ${pedido.id} está agora em preparo.`,
-            })
-          } else if (pedido.status === "Em Preparo" && elapsed >= (1 + 4) * 60 * 1000) {
-            // Se passou 5 minutos (1 min pendente + 4 min preparo), mover para "Em Entrega"
-            await atualizarStatusPedido(pedido.id, "Em Entrega")
-
-            toast({
-              title: "Pedido pronto",
-              description: `O pedido ${pedido.id} está pronto para entrega.`,
-            })
-          }
+        if (updatedItems.every((item) => item.status === "ready")) {
+          newOrderStatus = "ready"
+        } else if (updatedItems.some((item) => item.status === "preparing" || item.status === "ready")) {
+          newOrderStatus = "preparing"
         }
-
-        // Atualizar a lista de pedidos após as alterações
-        await carregarPedidos()
-      } catch (error) {
-        console.error("Erro ao atualizar status dos pedidos:", error)
-      }
-    }, 5000) // Verificar a cada 5 segundos
-
-    return () => clearInterval(timer)
-  }, [toast])
-
-  // Função para marcar um pedido como pronto manualmente
-  const marcarComoPronto = async (id: string) => {
-    try {
-      // Atualizar no sistema para "Em Entrega" (não "Concluído")
-      // Isso permite que o fluxo continue na página de pedidos
-      await atualizarStatusPedido(id, "Em Entrega")
-
-      // Atualizar a interface
-      setPedidos((prev) => {
-        const pendentesAtualizados = prev.Pendentes.filter((p) => p.id !== id)
-        const pedidoAtualizado = prev.Pendentes.find((p) => p.id === id)
-        
-        toast({
-          title: "Pedido pronto",
-          description: `O pedido ${id} foi marcado como pronto e está aguardando entrega.`,
-        })
 
         return {
-          Pendentes: pendentesAtualizados,
-          Concluídos: pedidoAtualizado 
-            ? [...prev.Concluídos, {...pedidoAtualizado, status: "Em Entrega"}] 
-            : prev.Concluídos
+          ...order,
+          items: updatedItems,
+          status: newOrderStatus,
         }
       })
-    } catch (error) {
-      console.error("Erro ao marcar pedido como pronto:", error)
-      toast({
-        variant: "destructive",
-        title: "Erro",
-        description: "Não foi possível marcar o pedido como pronto. Tente novamente.",
+    })
+
+    toast.success(`Status do item atualizado!`)
+  }
+
+  // Marcar pedido como pronto
+  function markOrderAsReady(orderId: string) {
+    setOrders((prevOrders) => {
+      return prevOrders.map((order) => {
+        if (order.id !== orderId) return order
+
+        // Atualizar todos os itens para "pronto"
+        const updatedItems = order.items.map((item) => ({
+          ...item,
+          status: "ready" as const,
+        }))
+
+        return {
+          ...order,
+          items: updatedItems,
+          status: "ready",
+        }
       })
+    })
+
+    toast.success(`Pedido marcado como pronto!`)
+  }
+
+  // Formatar tempo de espera
+  function formatWaitTime(isoString: string) {
+    const orderTime = new Date(isoString).getTime()
+    const now = Date.now()
+    const diffMinutes = Math.floor((now - orderTime) / (1000 * 60))
+
+    if (diffMinutes < 60) {
+      return `${diffMinutes} min`
+    } else {
+      const hours = Math.floor(diffMinutes / 60)
+      const minutes = diffMinutes % 60
+      return `${hours}h ${minutes}m`
     }
   }
 
-  // Função para atualizar manualmente os pedidos
-  const atualizarPedidos = () => {
-    carregarPedidos()
-    toast({
-      title: "Atualizando",
-      description: "Lista de pedidos atualizada",
-    })
+  // Obter cor do status
+  function getStatusColor(status: "pending" | "preparing" | "ready") {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-100 text-yellow-800"
+      case "preparing":
+        return "bg-blue-100 text-blue-800"
+      case "ready":
+        return "bg-green-100 text-green-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
   }
 
-  // Renderizar estado de carregamento
-  if (loading) {
+  // Obter texto do status
+  function getStatusText(status: "pending" | "preparing" | "ready") {
+    switch (status) {
+      case "pending":
+        return "Pendente"
+      case "preparing":
+        return "Preparando"
+      case "ready":
+        return "Pronto"
+      default:
+        return "Desconhecido"
+    }
+  }
+
+  // Obter ícone do status
+  function getStatusIcon(status: "pending" | "preparing" | "ready") {
+    switch (status) {
+      case "pending":
+        return <Clock className="h-4 w-4" />
+      case "preparing":
+        return <ChefHat className="h-4 w-4" />
+      case "ready":
+        return <CheckCircle className="h-4 w-4" />
+      default:
+        return <Bell className="h-4 w-4" />
+    }
+  }
+
+  // Renderização condicional
+  if (loadingAuth) {
     return (
-      <div className="p-6 space-y-6">
-        <h1 className="text-3xl font-bold">Cozinha</h1>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+          <span className="text-gray-600">Verificando autenticação...</span>
         </div>
       </div>
     )
   }
 
-  // Renderizar estado de erro
-  if (error) {
-    return (
-      <div className="p-6 space-y-6">
-        <h1 className="text-3xl font-bold">Cozinha</h1>
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-        <Button onClick={atualizarPedidos}>Tentar novamente</Button>
-      </div>
-    )
+  if (!isAuthenticated) {
+    return null // Será redirecionado pelo useEffect
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Cozinha</h1>
-        <Button 
-          variant="outline" 
-          onClick={atualizarPedidos} 
-          disabled={atualizando}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${atualizando ? 'animate-spin' : ''}`} />
-          {atualizando ? 'Atualizando...' : 'Atualizar'}
+    <div className="p-6 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Cozinha</h1>
+          <p className="text-gray-500">Gerenciamento de pedidos em preparação</p>
+        </div>
+        <Button onClick={handleRefresh} disabled={refreshing} variant="outline" className="mt-4 md:mt-0">
+          {refreshing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+          Atualizar
         </Button>
       </div>
 
-      <Tabs defaultValue="Pendentes">
-        <TabsList className="w-full grid grid-cols-2">
-          <TabsTrigger value="Pendentes" className="relative">
-            Pendentes
-            {pedidos.Pendentes.length > 0 && (
-              <span className="absolute top-0 right-0 -mt-1 -mr-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {pedidos.Pendentes.length}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="Concluídos">Concluídos Hoje</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="Pendentes" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pedidos.Pendentes.length > 0 ? (
-              pedidos.Pendentes.map((pedido) => (
-                <Card
-                  key={pedido.id}
-                  className={
-                    pedido.status === "Pendente"
-                      ? "border-blue-200"
-                      : pedido.status === "Em Preparo"
-                        ? "border-yellow-200"
-                        : ""
-                  }
-                >
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{pedido.id}</CardTitle>
-                      <div className="text-sm text-gray-500 flex items-center mt-1">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {pedido.horario}
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-500">{pedido.cliente}</div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {pedido.itens.map((item, index) => (
-                        <div key={index} className="pb-3 border-b last:border-0 last:pb-0">
-                          <div className="flex justify-between">
-                            <span className="font-medium">
-                              {item.quantidade}x {item.nome}
-                            </span>
-                          </div>
-                          {item.observacao && <p className="text-sm text-gray-500 mt-1">Obs: {item.observacao}</p>}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Barra de progresso */}
-                    <div className="mt-4">
-                      <div className="flex justify-between text-xs text-gray-500 mb-1">
-                        <span>{pedido.status === "Pendente" ? "Aguardando preparo" : "Em preparo"}</span>
-                        <span>{pedido.status === "Pendente" ? "Inicia em breve" : "Em andamento"}</span>
-                      </div>
-                      <ProgressBar
-                        status={pedido.status}
-                        startTime={pedido.startTime}
-                        tipoAtendimento={pedido.tipoAtendimento}
-                      />
-                    </div>
-
-                    <Button
-                      className="w-full mt-4 bg-green-600 hover:bg-green-700"
-                      onClick={() => marcarComoPronto(pedido.id)}
-                    >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Marcar como Pronto
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <div className="col-span-full text-center py-8">
-                <p className="text-gray-500">Nenhum pedido pendente</p>
-              </div>
-            )}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+            <span className="text-gray-600">Carregando pedidos...</span>
           </div>
-        </TabsContent>
-
-        <TabsContent value="Concluídos" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {pedidos.Concluídos.length > 0 ? (
-              pedidos.Concluídos.map((pedido) => (
-                <Card key={pedido.id}>
-                  <CardHeader className="pb-2 flex flex-row items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{pedido.id}</CardTitle>
-                      <div className="text-sm text-gray-500 flex items-center mt-1">
-                        <Clock className="h-3 w-3 mr-1" />
-                        {pedido.horario}
+        </div>
+      ) : orders.length === 0 ? (
+        <div className="bg-white rounded-lg border p-8 text-center">
+          <Coffee className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-1">Nenhum pedido na fila</h3>
+          <p className="text-gray-500">Todos os pedidos foram preparados</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {orders.map((order) => (
+            <Card key={order.id} className={order.status === "ready" ? "border-green-500" : ""}>
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="text-xl">{order.number}</CardTitle>
+                    <div className="text-sm text-gray-500">
+                      {order.table && <p>{order.table}</p>}
+                      {order.customerName && <p>Cliente: {order.customerName}</p>}
+                    </div>
+                  </div>
+                  <Badge className={getStatusColor(order.status)}>
+                    <div className="flex items-center space-x-1">
+                      {getStatusIcon(order.status)}
+                      <span>{getStatusText(order.status)}</span>
+                    </div>
+                  </Badge>
+                </div>
+                <div className="flex items-center text-sm text-gray-500 mt-2">
+                  <Timer className="h-4 w-4 mr-1" />
+                  <span>Espera: {formatWaitTime(order.createdAt)}</span>
+                </div>
+              </CardHeader>
+              <CardContent className="pb-2">
+                <h3 className="font-medium text-gray-700 mb-2">Itens:</h3>
+                <div className="space-y-3">
+                  {order.items.map((item) => (
+                    <div key={item.id} className="bg-gray-50 p-3 rounded-md">
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <p className="font-medium">
+                            {item.quantity}x {item.name}
+                          </p>
+                          {item.observation && <p className="text-sm text-gray-500 italic">{item.observation}</p>}
+                        </div>
+                        <Badge className={getStatusColor(item.status)}>{getStatusText(item.status)}</Badge>
+                      </div>
+                      <div className="flex mt-2 space-x-2">
+                        {item.status === "pending" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                            onClick={() => updateItemStatus(order.id, item.id, "preparing")}
+                          >
+                            <ChefHat className="h-3 w-3 mr-1" />
+                            Preparar
+                          </Button>
+                        )}
+                        {item.status === "preparing" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-green-600 border-green-600 hover:bg-green-50"
+                            onClick={() => updateItemStatus(order.id, item.id, "ready")}
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Pronto
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="text-sm text-gray-500">{pedido.cliente}</div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {pedido.itens.map((item, index) => (
-                        <div key={index} className="pb-3 border-b last:border-0 last:pb-0">
-                          <div className="flex justify-between">
-                            <span className="font-medium">
-                              {item.quantidade}x {item.nome}
-                            </span>
-                          </div>
-                          {item.observacao && <p className="text-sm text-gray-500 mt-1">Obs: {item.observacao}</p>}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-4 text-sm text-gray-500">
-                      Status: {pedido.status === "Em Entrega" ? "Pronto para entrega" : 
-                              pedido.status === "Concluído" || pedido.status === "finalizado" ? 
-                              "Finalizado" : pedido.status}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <div className="col-span-full text-center py-8">
-                <p className="text-gray-500">Nenhum pedido concluído hoje</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+                  ))}
+                </div>
+              </CardContent>
+              <CardFooter className="pt-2">
+                {order.status !== "ready" && (
+                  <Button className="w-full bg-green-500 hover:bg-green-600" onClick={() => markOrderAsReady(order.id)}>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Marcar Pedido como Pronto
+                  </Button>
+                )}
+                {order.status === "ready" && (
+                  <div className="w-full text-center text-green-600 font-medium">Pedido pronto para entrega!</div>
+                )}
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
